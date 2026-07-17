@@ -1,0 +1,21 @@
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3307/docx_checker?useSSL=false
+    username: root
+    password: giadinh
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  servlet:
+    multipart:
+      max-file-size: 20MB    # Cho phép file Word tối đa 20M
+      max-request-size: 25MB # Tổng dung lượng request
+
+server:
+  port: 8080
