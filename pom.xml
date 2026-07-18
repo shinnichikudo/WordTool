@@ -69,12 +69,19 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Thư viện lõi Docx4j để bóc tách file Word -->
-        <dependency>
-            <groupId>org.docx4j</groupId>
-            <artifactId>docx4j-JAXB-ReferenceImpl</artifactId>
-            <version>8.3.9</version>
-        </dependency>
+    <!-- Lõi Docx4j phiên bản mới nhất cho Spring Boot 3 / Java 17+ -->
+    <dependency>
+        <groupId>org.docx4j</groupId>
+        <artifactId>docx4j-core</artifactId>
+        <version>11.4.11</version>
+    </dependency>
+
+    <!-- Bộ triển khai JAXB đi kèm đồng bộ 100% tránh lỗi ClassNotFound -->
+    <dependency>
+        <groupId>org.docx4j</groupId>
+        <artifactId>docx4j-JAXB-ReferenceImpl</artifactId>
+        <version>11.4.11</version>
+    </dependency>
     </dependencies>
 	<build>
 		<plugins>
