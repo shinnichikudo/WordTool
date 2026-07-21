@@ -20,6 +20,11 @@ public class PageSetup {
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "profile_id", nullable = false, unique = true)
     private FormatProfile formatProfile;
+    @Column(name = "page_width")
+    private Double pageWidth;
+
+    @Column(name = "page_height")
+    private Double pageHeight;
 
     private String paperSize;
     private Double marginTop;

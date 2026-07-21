@@ -1,6 +1,8 @@
 package com.example.demo.modules.engine.parser;
 
+import com.example.demo.modules.engine.validator.PageSetupValidator;
 import com.example.demo.modules.engine.validator.TypographyValidator;
+import com.example.demo.modules.profile.entity.PageSetup;
 import com.example.demo.modules.profile.entity.TypographyRule;
 import lombok.RequiredArgsConstructor;
 import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
@@ -14,25 +16,28 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Service
-@RequiredArgsConstructor // Tự động inject TypographyValidator vào
+@RequiredArgsConstructor
 public class DocxParserService {
 
-    //  Tiêm Validator vào đây
     private final TypographyValidator typographyValidator;
+    private final PageSetupValidator pageSetupValidator;
 
-    // thêm bộ luật (rule) và trả về danh sách lỗi
-    public List<String> parseWordFile(MultipartFile file, TypographyRule rule) {
+
+    public List<String> parseWordFile(MultipartFile file, TypographyRule typoRule, PageSetup pageSetupRule) {
         List<String> allErrors = new ArrayList<>();
 
         try (InputStream inputStream = file.getInputStream()) {
             WordprocessingMLPackage wordPackage = WordprocessingMLPackage.load(inputStream);
             MainDocumentPart mainDocumentPart = wordPackage.getMainDocumentPart();
-            List<Object> documentElements = mainDocumentPart.getContent();
 
+            //  KIỂM TRA CĂN LỀ VÀ KHỔ GIẤY
+            allErrors.addAll(checkPageSetup(mainDocumentPart, pageSetupRule));
+
+            // KIỂM TRA FONT CHỮ VÀ ĐỊNH DẠNG TEXT
+            List<Object> documentElements = mainDocumentPart.getContent();
             for (Object obj : documentElements) {
                 if (obj instanceof P paragraph) {
-                    // Gom lỗi của từng đoạn văn lại
-                    allErrors.addAll(processParagraphNode(paragraph, rule));
+                    allErrors.addAll(processParagraphNode(paragraph, typoRule));
                 }
             }
             return allErrors;
@@ -40,6 +45,44 @@ public class DocxParserService {
         } catch (Exception e) {
             throw new RuntimeException("Lỗi thuật toán khi phân tích file Word: " + e.getMessage());
         }
+    }
+
+    private List<String> checkPageSetup(MainDocumentPart mainDocumentPart, PageSetup rule) {
+        List<String> errors = new ArrayList<>();
+        if (rule == null) return errors;
+
+        SectPr sectPr = mainDocumentPart.getJaxbElement().getBody().getSectPr();
+        if (sectPr == null) return errors;
+
+        Double actualWidth = null, actualHeight = null;
+        Double actualTop = null, actualBottom = null, actualLeft = null, actualRight = null;
+        final double TWIPS_TO_CM = 567.0;
+
+        if (sectPr.getPgSz() != null) {
+            if (sectPr.getPgSz().getW() != null) {
+                actualWidth = sectPr.getPgSz().getW().doubleValue() / TWIPS_TO_CM;
+            }
+            if (sectPr.getPgSz().getH() != null) {
+                actualHeight = sectPr.getPgSz().getH().doubleValue() / TWIPS_TO_CM;
+            }
+        }
+
+        if (sectPr.getPgMar() != null) {
+            if (sectPr.getPgMar().getTop() != null) {
+                actualTop = sectPr.getPgMar().getTop().doubleValue() / TWIPS_TO_CM;
+            }
+            if (sectPr.getPgMar().getBottom() != null) {
+                actualBottom = sectPr.getPgMar().getBottom().doubleValue() / TWIPS_TO_CM;
+            }
+            if (sectPr.getPgMar().getLeft() != null) {
+                actualLeft = sectPr.getPgMar().getLeft().doubleValue() / TWIPS_TO_CM;
+            }
+            if (sectPr.getPgMar().getRight() != null) {
+                actualRight = sectPr.getPgMar().getRight().doubleValue() / TWIPS_TO_CM;
+            }
+        }
+
+        return pageSetupValidator.validate(actualWidth, actualHeight, actualTop, actualBottom, actualLeft, actualRight, rule);
     }
 
     private List<String> processParagraphNode(P paragraph, TypographyRule rule) {
@@ -52,7 +95,6 @@ public class DocxParserService {
                 RPr runProperties = run.getRPr();
 
                 if (runProperties != null && !text.trim().isEmpty()) {
-                    // Chuyền dữ liệu sang hàm check
                     paragraphErrors.addAll(checkFormatting(runProperties, text, rule));
                 }
             }
@@ -76,30 +118,24 @@ public class DocxParserService {
     }
 
     private List<String> checkFormatting(RPr runProperties, String text, TypographyRule rule) {
-        // Khởi tạo các giá trị mặc định
         String fontName = null;
         Double fontSize = null;
         Boolean isBold = false;
         Boolean isItalic = false;
 
-        // Bóc tách Font
         if (runProperties.getRFonts() != null) {
             fontName = runProperties.getRFonts().getAscii();
         }
-        // Bóc tách Cỡ chữ
         if (runProperties.getSz() != null) {
             fontSize = runProperties.getSz().getVal().doubleValue() / 2;
         }
-        // Bóc tách In đậm (Trong docx4j, nếu getB() != null tức là có bật in đậm)
         if (runProperties.getB() != null) {
             isBold = true;
         }
-        // Bóc tách In nghiêng
         if (runProperties.getI() != null) {
             isItalic = true;
         }
 
-        //  GỌI VALIDATOR VÀ TRẢ VỀ LỖI
         return typographyValidator.validate(text, fontName, fontSize, isBold, isItalic, rule);
     }
 }
