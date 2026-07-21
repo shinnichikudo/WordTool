@@ -2,10 +2,13 @@ package com.example.demo.modules.engine.controller;
 
 import com.example.demo.modules.engine.dto.AnalysisResponseDTO;
 import com.example.demo.modules.engine.parser.DocxParserService;
+import com.example.demo.modules.profile.entity.TypographyRule;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/engine")
@@ -17,7 +20,7 @@ public class DocumentAnalysisController {
     @PostMapping("/analyze")
     public ResponseEntity<AnalysisResponseDTO> analyzeDocument(@RequestParam("file") MultipartFile file) {
 
-        //  Kiểm tra file hợp lệ
+        // Kiểm tra file hợp lệ
         if (file.isEmpty() || !file.getOriginalFilename().endsWith(".docx")) {
             return ResponseEntity.badRequest().body(
                     AnalysisResponseDTO.builder()
@@ -28,20 +31,29 @@ public class DocumentAnalysisController {
         }
 
         try {
-            //  Giao cho Parser bóc tách dữ liệu
-            docxParserService.parseWordFile(file);
+            //  Tạo một bộ luật (Rule) giả lập để test thuật toán trước khi nối với Database
+            //  dùng Times New Roman, cỡ 13, không in đậm, không in nghiêng
+            TypographyRule mockRule = TypographyRule.builder()
+                    .fontFamily("Times New Roman")
+                    .fontSize(13.0)
+                    .isBold(false)
+                    .isItalic(false)
+                    .build();
 
-            //  Trả về phản hồi thành công (Lúc này kết quả phân tích đang được in ra Console)
+            // Giao cho Parser bóc tách dữ liệu và đối chiếu với bộ luật mockRule ở trên
+            List<String> errors = docxParserService.parseWordFile(file, mockRule);
+
+            //  Trả về phản hồi cho Postman kèm theo danh sách các lỗi vi phạm
             return ResponseEntity.ok(
                     AnalysisResponseDTO.builder()
                             .fileName(file.getOriginalFilename())
-                            .status("SUCCESS")
-                            .message("Thuật toán đã chạy xong! ")
+                            .status(errors.isEmpty() ? "PASSED" : "FAILED") // Nếu danh sách lỗi rỗng -> PASSED
+                            .message("Thuật toán đã chạy xong!")
+                            .errors(errors)
                             .build()
             );
 
         } catch (Exception e) {
-            // Bắt mọi lỗi xảy ra trong quá trình đọc file để API không bị crash
             return ResponseEntity.internalServerError().body(
                     AnalysisResponseDTO.builder()
                             .fileName(file.getOriginalFilename())

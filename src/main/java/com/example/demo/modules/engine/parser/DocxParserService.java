@@ -1,69 +1,68 @@
 package com.example.demo.modules.engine.parser;
+
+import com.example.demo.modules.engine.validator.TypographyValidator;
+import com.example.demo.modules.profile.entity.TypographyRule;
+import lombok.RequiredArgsConstructor;
 import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
 import org.docx4j.openpackaging.parts.WordprocessingML.MainDocumentPart;
-import org.docx4j.wml.P;
-import org.docx4j.wml.R;
-import org.docx4j.wml.RPr;
+import org.docx4j.wml.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-import org.docx4j.wml.Text;
 
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
-@Service
-public class DocxParserService {
-    public void parseWordFile(MultipartFile file) {
-        try (InputStream inputStream = file.getInputStream()) {
 
-            //  Dựng cây cú pháp XML từ file Word
+@Service
+@RequiredArgsConstructor // Tự động inject TypographyValidator vào
+public class DocxParserService {
+
+    //  Tiêm Validator vào đây
+    private final TypographyValidator typographyValidator;
+
+    // thêm bộ luật (rule) và trả về danh sách lỗi
+    public List<String> parseWordFile(MultipartFile file, TypographyRule rule) {
+        List<String> allErrors = new ArrayList<>();
+
+        try (InputStream inputStream = file.getInputStream()) {
             WordprocessingMLPackage wordPackage = WordprocessingMLPackage.load(inputStream);
             MainDocumentPart mainDocumentPart = wordPackage.getMainDocumentPart();
-
-            //  Lấy danh sách tất cả các node con trực tiếp của Body
             List<Object> documentElements = mainDocumentPart.getContent();
 
-            System.out.println(" BẮT ĐẦU DUYỆT CÂY TÀI LIỆU");
-
-            //  Duyệt qua từng node
             for (Object obj : documentElements) {
                 if (obj instanceof P paragraph) {
-                    processParagraphNode(paragraph);
+                    // Gom lỗi của từng đoạn văn lại
+                    allErrors.addAll(processParagraphNode(paragraph, rule));
                 }
-                // Sau này làm tiếp: else if (obj instanceof Tbl) { processTableNode(obj); }
             }
+            return allErrors;
 
         } catch (Exception e) {
             throw new RuntimeException("Lỗi thuật toán khi phân tích file Word: " + e.getMessage());
         }
     }
-    private void processParagraphNode(P paragraph) {
-        StringBuilder paragraphText = new StringBuilder();
 
-        // Lấy danh sách các node con của Đoạn văn (Thường là các node R - Run)
+    private List<String> processParagraphNode(P paragraph, TypographyRule rule) {
+        List<String> paragraphErrors = new ArrayList<>();
         List<Object> runs = paragraph.getContent();
 
         for (Object runObj : runs) {
             if (runObj instanceof R run) {
-                //  Rút trích nội dung chữ (Node T)
                 String text = extractTextFromRun(run);
-                paragraphText.append(text);
-
-                //  Rút trích định dạng (Font, Cỡ chữ, In đậm...) từ Node RPr (Run Properties)
                 RPr runProperties = run.getRPr();
+
                 if (runProperties != null && !text.trim().isEmpty()) {
-                    checkFormatting(runProperties, text);
+                    // Chuyền dữ liệu sang hàm check
+                    paragraphErrors.addAll(checkFormatting(runProperties, text, rule));
                 }
             }
         }
-        if (!paragraphText.toString().trim().isEmpty()) {
-            System.out.println("[Nội dung đoạn]: " + paragraphText.toString());
-            System.out.println("--------------------------------------------------");
-        }
+        return paragraphErrors;
     }
+
     private String extractTextFromRun(R run) {
         StringBuilder text = new StringBuilder();
         for (Object obj : run.getContent()) {
-            // JAXBElement bọc node Text (T) bên trong
             if (obj instanceof jakarta.xml.bind.JAXBElement) {
                 Object unwrapped = ((jakarta.xml.bind.JAXBElement<?>) obj).getValue();
                 if (unwrapped instanceof Text t) {
@@ -76,22 +75,31 @@ public class DocxParserService {
         return text.toString();
     }
 
-    private void checkFormatting(RPr runProperties, String text) {
-        // Lấy Cỡ chữ (Trong Word, cỡ chữ lưu dưới dạng half-point. VD: 26 = 13pt)
-        if (runProperties.getSz() != null) {
-            double fontSize = runProperties.getSz().getVal().doubleValue() / 2;
-            System.out.println("   -> Chữ '" + text.trim() + "' có cỡ: " + fontSize + "pt");
-        }
+    private List<String> checkFormatting(RPr runProperties, String text, TypographyRule rule) {
+        // Khởi tạo các giá trị mặc định
+        String fontName = null;
+        Double fontSize = null;
+        Boolean isBold = false;
+        Boolean isItalic = false;
 
-        // Lấy In đậm
-        if (runProperties.getB() != null) {
-            System.out.println("   -> Chữ '" + text.trim() + "' được In đậm");
-        }
-
-        // Lấy Font chữ (Ascii font)
+        // Bóc tách Font
         if (runProperties.getRFonts() != null) {
-            String fontName = runProperties.getRFonts().getAscii();
-            System.out.println("   -> Chữ '" + text.trim() + "' dùng Font: " + fontName);
+            fontName = runProperties.getRFonts().getAscii();
         }
+        // Bóc tách Cỡ chữ
+        if (runProperties.getSz() != null) {
+            fontSize = runProperties.getSz().getVal().doubleValue() / 2;
+        }
+        // Bóc tách In đậm (Trong docx4j, nếu getB() != null tức là có bật in đậm)
+        if (runProperties.getB() != null) {
+            isBold = true;
+        }
+        // Bóc tách In nghiêng
+        if (runProperties.getI() != null) {
+            isItalic = true;
+        }
+
+        //  GỌI VALIDATOR VÀ TRẢ VỀ LỖI
+        return typographyValidator.validate(text, fontName, fontSize, isBold, isItalic, rule);
     }
 }

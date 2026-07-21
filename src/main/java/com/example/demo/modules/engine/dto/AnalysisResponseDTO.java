@@ -14,5 +14,5 @@ public class AnalysisResponseDTO {
     private String status;
     private String message;
 
-    // thêm một List<ErrorDetail> vào đây để trả về cho React hiển thị
+    private List<String> errors;
 }
